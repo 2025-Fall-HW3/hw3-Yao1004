@@ -71,7 +71,57 @@ class MyPortfolio:
         TODO: Complete Task 4 Below
         """
         
-        
+        top_k = 3  # Each time select top k momentum sectors
+        defensive = ["XLP", "XLU", "XLV"]  # defensive sector
+
+        for current_date in self.price.index:
+            # get historical price data up to current_date
+            hist = self.price.loc[:current_date, assets]
+
+            # if not enough data, skip
+            if len(hist) < self.lookback:
+                continue
+
+            hist = hist.iloc[-self.lookback:]
+
+            # calculate momentum and volatility
+            hist_ret = hist.pct_change().dropna()
+            if hist_ret.empty:
+                continue
+
+            momentum = hist.iloc[-1] / hist.iloc[0] - 1.0      # momentum over the past lookback days
+            vol = hist_ret.std()                               # volatility (standard deviation)
+            inv_vol = 1.0 / vol.replace(0, np.nan)             # 1/σ, avoid division by zero
+
+            # Select sectors with positive momentum, sorted by momentum
+            pos_mom = momentum[momentum > 0].sort_values(ascending=False)
+
+            if len(pos_mom) == 0:
+                # If all are declining, switch to defensive sectors
+                candidates = [a for a in defensive if a in assets]
+            else:
+                candidates = list(pos_mom.index[:top_k])
+
+            if len(candidates) == 0:
+                continue
+
+            # Among candidates, calculate weights based on inverse volatility
+            score = inv_vol[candidates]
+
+            # If all scores are NaN, assign equal weights
+            if score.isna().all():
+                weights = pd.Series(1.0 / len(candidates), index=candidates)
+            else:
+                score = score.fillna(score.mean())
+                score = score.clip(lower=1e-6)
+                weights = score / score.sum()
+
+            # Assign weights to portfolio
+            self.portfolio_weights.loc[current_date, :] = 0.0
+            self.portfolio_weights.loc[current_date, candidates] = weights.values
+            # Do not hold SPY
+            self.portfolio_weights.loc[current_date, self.exclude] = 0.0
+
         """
         TODO: Complete Task 4 Above
         """
